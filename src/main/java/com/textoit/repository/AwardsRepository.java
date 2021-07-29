@@ -12,15 +12,32 @@ import java.util.*;
 @ApplicationScoped
 public class AwardsRepository {
 
+    private static final String QUERY_SEARCH_PRODUCES = "SELECT produces FROM Movie WHERE winner = 'yes' GROUP BY produces ORDER BY produces";
+    private static final String QUERY_SEARCH_YEARS_BY_PRODUCES = "SELECT year FROM Movie WHERE winner = 'yes' AND REGEXP_LIKE( PRODUCES , :produces) is true ORDER BY year DESC";
+
     @Inject
-    EntityManager emNoTenant;
+    EntityManager entityManager;
 
     public AwardsOutput searchAwards() {
         List<MovieDTO> moviesDTO = new ArrayList<>();
-
         this.findAllProduces().forEach(produces -> {
-            if (!produces.isEmpty())
-                createMovieDTO(executeQuery(produces), produces, moviesDTO);
+            if (!produces.isEmpty()) {
+                List<Integer> years = (List<Integer>) executeQueryByProduces(QUERY_SEARCH_YEARS_BY_PRODUCES, produces);
+
+                if (years.size() > 1) {
+                    MovieDTO movie = new MovieDTO();
+
+                    Integer max = years.get(0);
+                    Integer min = years.get(1);
+
+                    movie.setPreviousWin(min);
+                    movie.setFollowingWin(max);
+                    movie.setInterval(max - min);
+                    movie.setProducer(produces);
+
+                    moviesDTO.add(movie);
+                }
+            }
         });
 
         Collections.sort(moviesDTO, Collections.reverseOrder());
@@ -33,8 +50,7 @@ public class AwardsRepository {
     }
 
     private ArrayList<String> findAllProduces() {
-        String queryProduces = "SELECT produces FROM Movie WHERE winner = 'yes' GROUP BY produces ORDER BY produces";
-        List<?> producesAll = Movie.list(queryProduces);
+        List<?> producesAll = Movie.list(QUERY_SEARCH_PRODUCES);
 
         Set<String> producesName = new HashSet<>();
         producesAll.forEach(obj -> {
@@ -48,27 +64,10 @@ public class AwardsRepository {
         return new ArrayList<>(producesName);
     }
 
-    private List<?> executeQuery(String produces) {
-        String query = "SELECT MAX(year) as followingWin, MIN(year) as previousWin, (MAX(year) - MIN(year) ) as year FROM Movie WHERE winner = 'yes'  AND REGEXP_LIKE( PRODUCES , :produces) is true  ORDER BY year DESC";
-
-        return emNoTenant.createQuery(query)
+    private List<?> executeQueryByProduces(String query, String produces) {
+        return entityManager.createQuery(query)
                 .setParameter("produces", produces)
                 .getResultList();
-    }
-
-    private void createMovieDTO(List<?> movies, String producer, List<MovieDTO> moviesReturn) {
-        for (Object obj : movies) {
-            Object[] value = (Object[]) obj;
-
-            MovieDTO movie = new MovieDTO();
-            movie.setFollowingWin((Integer) value[0]);
-            movie.setPreviousWin((Integer) value[1]);
-            movie.setInterval((Integer) value[2]);
-            movie.setProducer(producer);
-
-            if (movie.getInterval() > 0)
-                moviesReturn.add(movie);
-        }
     }
 
 }
